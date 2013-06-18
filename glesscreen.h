@@ -9,6 +9,8 @@
 #include <GLES/gl.h>
 #include <gf/gf3d.h>
 
+const int frameSpan = 20;
+
 class GLESScreen: public QScreen
 {
 public:

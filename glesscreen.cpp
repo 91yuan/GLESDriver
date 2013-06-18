@@ -3,7 +3,7 @@
 #include "helper.h"
 
 
-// Структура WindowInfo. Хранит информацию об окне - id текстуры этого окна/
+// Структура WindowInfo. Хранит информацию об окне - id текстуры этого окна
  struct WindowInfo
  {
      WindowInfo() : texture(0) {}
@@ -103,6 +103,9 @@ bool GLESScreen::connect(const QString &displaySpec)
 		qCritical("Unknown display format: %x\n", displayInfo.format);
 		return false;
 	}
+
+	// Событие таймера подключаем к функции redrawScreen()
+	this->connect(&updateTimer, SIGNAL(timeout()), this, SLOT(redrawScreenEvent()));
 
 	return true;
 }
@@ -213,8 +216,6 @@ bool GLESScreen::initDevice()
     this->connect(QWSServer::instance(),
                    SIGNAL(windowEvent(QWSWindow*, QWSServer::WindowEvent)),
                    SLOT(windowEvent(QWSWindow*, QWSServer::WindowEvent)));
-    // Событие таймера подключаем к функции redrawScreen()
-    this->connect(&updateTimer, SIGNAL(timeout()), this, SLOT(redrawScreenEvent()));
 
 	// Инициализация программного курсора
 	//QScreenCursor::initSoftwareCursor();
@@ -242,6 +243,21 @@ void GLESScreen::disconnect()
 {
 	gf_display_detach(this->gfDisplay);
 	gf_dev_detach(this->gfDev);
+}
+
+/*
+ * Переопределение метода exposeRegion из QScreen. Вызывается каждый раз, когда
+ * необходимо изменить изображение на экране.
+ */
+void GLESScreen::exposeRegion(QRegion r, int windowIndex)
+{
+    if ((r & region()).isEmpty())
+        return;
+
+    invalidateTexture(windowIndex);
+
+    if (!this->updateTimer.isActive())
+        this->updateTimer.start(frameSpan);
 }
 
 
@@ -339,5 +355,90 @@ void GLESScreen::invalidateTexture(int windowIndex)
     }
 }
 
+/*
+ * Рисует окно указанное в аргументе win.
+ */
+void GLESScreen::drawWindow(QWSWindow *win)
+ {
+     const QRect screenRect = win->allocatedRegion().boundingRect();
+     QRect drawRect = screenRect;
+
+     glColor4f(1.0, 1.0, 1.0, 1.0);
+     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+     glEnable(GL_BLEND);
+
+     QWSWindowSurface *surface = win->windowSurface();
+     if (!surface)
+         return;
+
+     drawQuad(win->requestedRegion().boundingRect(), screenRect, drawRect);
+ }
+
+/*
+ * Обновляет изображение на экране. Компанует все окна вместе. Выводит изображение
+ * на экран.
+ */
+ void QAhiGLScreen::redrawScreen()
+ {
+     glBindFramebufferOES(GL_FRAMEBUFFER_EXT, 0);
+     glMatrixMode(GL_PROJECTION);
+     glPushMatrix();
+     glMatrixMode(GL_MODELVIEW);
+     glPushMatrix();
+
+     glMatrixMode(GL_PROJECTION);
+     glLoadIdentity();
+     glOrthof(0, w, h, 0, -999999, 999999);
+     glViewport(0, 0, w, h);
+     glMatrixMode(GL_MODELVIEW);
+     glLoadIdentity();
+
+     // Заполняет задний фон
+     QColor bgColor = QWSServer::instance()->backgroundBrush().color();
+     glClearColor(bgColor.redF(), bgColor.greenF(),
+                  bgColor.blueF(), bgColor.alphaF());
+     glClear(GL_COLOR_BUFFER_BIT);
+
+     // Рисуте все окна
+     glDisable(GL_CULL_FACE);
+     glDisable(GL_DEPTH_TEST);
+     glDisable(GL_STENCIL_TEST);
+     glEnable(GL_BLEND);
+     glBlendFunc(GL_ONE, GL_ZERO);
+     glDisable(GL_ALPHA_TEST);
+     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+     QList<QWSWindow*> windows = QWSServer::instance()->clientWindows();
+     for (int i = windows.size() - 1; i >= 0; --i) {
+         QWSWindow *win = windows.at(i);
+         QWSWindowSurface *surface = win->windowSurface();
+         if (!surface)
+             continue;
+
+         WindowInfo *info = windowMap[win];
+
+         if (!info->texture) {
+             info->texture = createTexture(surface->image());
+         }
+         glBindTexture(GL_TEXTURE_2D, info->texture);
+         drawWindow(win, progress);
+     }
+
+     // Рисует курсор поверх всех окон
+     const GLESCursor *cursor = this->cursor;
+     if (cursor->texture) {
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+         glBindTexture(GL_TEXTURE_2D, this->cursor->texture);
+         drawQuad(cursor->boundingRect(), cursor->boundingRect(),
+                  cursor->boundingRect());
+     }
+
+     glPopMatrix();
+     glMatrixMode(GL_PROJECTION);
+     glPopMatrix();
+     glMatrixMode(GL_MODELVIEW);
+
+     eglSwapBuffers(this->eglDisplay, this->eglSurface);
+ }
 
 
