@@ -1,9 +1,23 @@
 #include "glesscreen.h"
+#include "glescursor.h"
+#include "helper.h"
 
+
+// –°—Ç—Ä—É–∫—Ç—É—Ä–∞ WindowInfo. –•—Ä–∞–Ω–∏—Ç –∏–Ω—Ñ–æ—Ä–º–∞—Ü–∏—é –æ–± –æ–∫–Ω–µ - id —Ç–µ–∫—Å—Ç—É—Ä—ã —ç—Ç–æ–≥–æ –æ–∫–Ω–∞/
+ struct WindowInfo
+ {
+     WindowInfo() : texture(0) {}
+     GLuint texture;
+ };
+
+ // –ö–∞—Ä—Ç–∞ —Å—Ç–∞–≤—è—â–∞—è –≤ —Å–æ–æ—Ç–≤–µ—Ç—Å—Ç–≤–∏–µ –æ–∫–Ω—É –∏–Ω—Ñ–æ—Ä–º–∞—Ü–∏—é –æ –Ω–µ–º
+ static QMap<QWSWindow*, WindowInfo*> windowMap;
 
 GLESScreen::GLESScreen(int displayId)
 	:QScreen(displayId)
 {
+	this->cursor = 0;
+
 	this->displayId = displayId;
 	this->eglAttrs[0] = EGL_RED_SIZE;	this->eglAttrs[1] = 0;
 	this->eglAttrs[2] = EGL_GREEN_SIZE;	this->eglAttrs[3] = 0;
@@ -20,32 +34,32 @@ bool GLESScreen::connect(const QString &displaySpec)
 {
 	gf_dev_info_t  gdevInfo;
 
-	// œÓ‰ÍÎ˛˜ÂÌËÂ Í ‚Ë‰ÂÓÛÒÚÓÈÒÚ‚Û. ¬ Í‡˜ÂÒÚ‚Â ‚Ë‰ÂÓÛÒÚÓÈÒÚ‚‡ ‚˚·Ë‡ÂÚÒˇ ÔÂ‚ÓÂ
-	// ÛÒÚÓÈÒÚ‚Ó ‚ dev/io-display (GF_DEVICE_INDEX(0)).
+	// –ü–æ–¥–∫–ª—é—á–µ–Ω–∏–µ –∫ –≤–∏–¥–µ–æ—É—Å—Ç—Ä–æ–π—Å—Ç–≤—É. –í –∫–∞—á–µ—Å—Ç–≤–µ –≤–∏–¥–µ–æ—É—Å—Ç—Ä–æ–π—Å—Ç–≤–∞ –≤—ã–±–∏—Ä–∞–µ—Ç—Å—è –ø–µ—Ä–≤–æ–µ
+	// —É—Å—Ç—Ä–æ–π—Å—Ç–≤–æ –≤ dev/io-display (GF_DEVICE_INDEX(0)).
 	if (gf_dev_attach(&this->gfDev, GF_DEVICE_INDEX(0), &gdevInfo) != GF_ERR_OK) {
 		qCritical("gf_dev_attach() failed\n");
 	    return false;
 	}
 
-	// œÓ‚ÂÍ‡, ˜ÚÓ ÔÂÂ‰‡ÌÌ˚È ‚ ÍÓÌÒÚÛÍÚÓÂ Ë‰ÂÌÚËÙËÍ‡ÚÓ ‰ËÒÔÎÂˇ ˇ‚ÎˇÂÚÒˇ ‰ÓÔÛÒÚËÏ˚Ï
+	// –ü—Ä–æ–≤–µ—Ä–∫–∞, —á—Ç–æ –ø–µ—Ä–µ–¥–∞–Ω–Ω—ã–π –≤ –∫–æ–Ω—Å—Ç—Ä—É–∫—Ç–æ—Ä–µ –∏–¥–µ–Ω—Ç–∏—Ñ–∏–∫–∞—Ç–æ—Ä –¥–∏—Å–ø–ª–µ—è —è–≤–ª—è–µ—Ç—Å—è –¥–æ–ø—É—Å—Ç–∏–º—ã–º
 	if (this->displayId > gdevInfo.ndisplays - 1) {
 		qCritical("No such display with id: %i\n Number of displays: %i\n",
 				this->displayId, gdevInfo.ndisplays);
 		return false;
 	}
 
-	// œÓ‰ÍÎ˛˜ÂÌËÂ Í ÛÍ‡Á‡ÌÌÓÏÛ ‰ËÒÔÎÂ˛. œÓÎÛ˜ÂËÂ ËÌÙÓÏ‡ˆËË Ó ÌÂÏ.
+	// –ü–æ–¥–∫–ª—é—á–µ–Ω–∏–µ –∫ —É–∫–∞–∑–∞–Ω–Ω–æ–º—É –¥–∏—Å–ø–ª–µ—é. –ü–æ–ª—É—á–µ–∏–µ –∏–Ω—Ñ–æ—Ä–º–∞—Ü–∏–∏ –æ –Ω–µ–º.
 	if (gf_display_attach(&this->gfDisplay, this->gfDev, this->displayId,
 			&this->displayInfo) != GF_ERR_OK) {
 		qCritical("gf_display_attach() failed\n");
 		return false;
 	}
 
-	// Ó‰ËÌ ËÁ Ì‡Ë·ÓÎÂÂ ÔÓÔÛÎˇÌ˚ı dpi
-	// ‚˚·‡Ì ÍÓÌÒÚ‡ÌÚÌ˚Ï ÔÓÒÍÓÎ¸ÍÛ ÌÂ ÔÂ‰ÒÚ‡‚ÎˇÂÚÒˇ ‚ÓÁÏÓÊÌ˚Ï ÛÁÌ‡Ú¸ Â‡Î¸Ì˚È
+	// –æ–¥–∏–Ω –∏–∑ –Ω–∞–∏–±–æ–ª–µ–µ –ø–æ–ø—É–ª—è—Ä–Ω—ã—Ö dpi
+	// –≤—ã–±—Ä–∞–Ω –∫–æ–Ω—Å—Ç–∞–Ω—Ç–Ω—ã–º –ø–æ—Å–∫–æ–ª—å–∫—É –Ω–µ –ø—Ä–µ–¥—Å—Ç–∞–≤–ª—è–µ—Ç—Å—è –≤–æ–∑–º–æ–∂–Ω—ã–º —É–∑–Ω–∞—Ç—å —Ä–µ–∞–ª—å–Ω—ã–π
 	const int dpi = 120;
 
-	// ÛÒÚ‡ÌÓ‚Í‡ Ô‡‡ÏÂÚÓ‚ ‰ËÒÔÎÂˇ
+	// —É—Å—Ç–∞–Ω–æ–≤–∫–∞ –ø–∞—Ä–∞–º–µ—Ç—Ä–æ–≤ –¥–∏—Å–ø–ª–µ—è
 	this->w = displayInfo.xres;
 	this->h = displayInfo.yres;
 	this->dw = this->w;
@@ -53,7 +67,7 @@ bool GLESScreen::connect(const QString &displaySpec)
 	this->physWidth = qRound(this->dw * 25.4 / dpi);
 	this->physHeight = qRound(this->dh * 25.4 / dpi);
 
-	// Õ‡ÒÚÓÈÍ‡ Ô‡‡ÏÂÚÓ‚ ˆ‚ÂÚÓ‚
+	// –ù–∞—Å—Ç—Ä–æ–π–∫–∞ –ø–∞—Ä–∞–º–µ—Ç—Ä–æ–≤ —Ü–≤–µ—Ç–æ–≤
 	switch (this->displayInfo.format)
 	{
 	case GF_FORMAT_PAL8:
@@ -75,7 +89,7 @@ bool GLESScreen::connect(const QString &displaySpec)
 		break;
 	case GF_FORMAT_BGR888:
 		this->d = 24;
-		this->pixeltype = BGRPixel;		// Ó·‡ÚÌ˚È ÔÓˇ‰ÓÍ ˆ‚ÂÚÓ‚
+		this->pixeltype = BGRPixel;		// –æ–±—Ä–∞—Ç–Ω—ã–π –ø–æ—Ä—è–¥–æ–∫ —Ü–≤–µ—Ç–æ–≤
 		this->setPixelFormat(QImage::Format_RGB888);
 		this->setAttrs(8, 8, 8,  0, 24);
 		break;
@@ -93,7 +107,7 @@ bool GLESScreen::connect(const QString &displaySpec)
 	return true;
 }
 
-// ‘ÛÌÍˆËˇ ÛÒÚ‡Ì‡‚ÎË‚‡ÂÚ ‡ÚË·ÛÚ˚ eglAttrs[] ‚ ÛÍ‡Á‡ÌÌ˚Â ÁÌ‡˜ÂÌËˇ
+// –§—É–Ω–∫—Ü–∏—è —É—Å—Ç–∞–Ω–∞–≤–ª–∏–≤–∞–µ—Ç –∞—Ç—Ä–∏–±—É—Ç—ã eglAttrs[] –≤ —É–∫–∞–∑–∞–Ω–Ω—ã–µ –∑–Ω–∞—á–µ–Ω–∏—è
 void GLESScreen::setAttrs(int red, int green, int blue, int alpha, int depth)
 {
 	this->eglAttrs[1] = red;
@@ -105,21 +119,21 @@ void GLESScreen::setAttrs(int red, int green, int blue, int alpha, int depth)
 
 bool GLESScreen::initDevice()
 {
-	// œÓÎÛ˜ÂÌËÂ EGLDisplay
+	// –ü–æ–ª—É—á–µ–Ω–∏–µ EGLDisplay
 	this->eglDisplay = eglGetDisplay(this->gfDev);
 	if (this->eglDisplay == EGL_NO_DISPLAY) {
 		qCritical("eglGetDisplay() failed\n");
 		return false;
 	}
 
-	// œÓ‰Î˛˜ÂÌËÂ Í „Î‡‚ÌÓÏÛ ÒÎÓ˛ ‰ËÒÔÎÂˇ
+	// –ü–æ–¥–ª—é—á–µ–Ω–∏–µ –∫ –≥–ª–∞–≤–Ω–æ–º—É —Å–ª–æ—é –¥–∏—Å–ø–ª–µ—è
 	if (gf_layer_attach(&this->gfLayer, this->gfDisplay,
 			this->displayInfo.main_layer_index, 0) != GF_ERR_OK) {
 		qCritical("gf_layer_attach() failed\n");
 		return false;
 	}
 
-	// »ÌËˆË‡ÎËÁ‡ˆËˇ ‰ËÒÔÎÂˇ
+	// –ò–Ω–∏—Ü–∏–∞–ª–∏–∑–∞—Ü–∏—è –¥–∏—Å–ø–ª–µ—è
 	if (!eglInitialize(this->eglDisplay, NULL, NULL)) {
 		qCritical("eglInitialize() failed");
 		return false;
@@ -127,14 +141,14 @@ bool GLESScreen::initDevice()
 
 
 	for (int i = 0; ; i++) {
-	    // œÓ‚ÂˇÂÏ ‚ÒÂ ‚Ë‰˚ ÙÓÏ‡ÚÓ‚ ‰Îˇ ˝ÚÓ„Ó ÒÎÓˇ
+	    // –ü—Ä–æ–≤–µ—Ä—è–µ–º –≤—Å–µ –≤–∏–¥—ã —Ñ–æ—Ä–º–∞—Ç–æ–≤ –¥–ª—è —ç—Ç–æ–≥–æ —Å–ª–æ—è
 	    if (gf_layer_query(this->gfLayer, i, &this->lInfo) != GF_ERR_OK) {
 	    	qCritical("Couldn't find a compatible frame "
 	            "buffer configuration on layer\n");
 	    	return false;
 	    }
 
-	    // ÕÂÓ·ıÓ‰ËÏÓ, ˜ÚÓ·˚ ÙÓÏ‡Ú ÒÎÓˇ ÒÓÓÚ‚ÂÚÒÚ‚Ó‚‡Î ÙÓÏ‡ÚÛ ·ÛÙÙÂ‡ EGL
+	    // –ù–µ–æ–±—Ö–æ–¥–∏–º–æ, —á—Ç–æ–±—ã —Ñ–æ—Ä–º–∞—Ç —Å–ª–æ—è —Å–æ–æ—Ç–≤–µ—Ç—Å—Ç–≤–æ–≤–∞–ª —Ñ–æ—Ä–º–∞—Ç—É –±—É—Ñ—Ñ–µ—Ä–∞ EGL
 	    this->eglAttrs[11] = this->lInfo.format;
 	    EGLint numConfigs;
 	    if (eglChooseConfig(this->eglDisplay, this->eglAttrs, &this->eglConfig,
@@ -147,7 +161,7 @@ bool GLESScreen::initDevice()
 
 	gf_surface_t    surface;
 	if (gf_surface_create_layer(&surface, &this->gfLayer, 1, 0, this->w, this->h,
-			this->lInfo.format, NULL, GF_SURFACE_CREATE_CPU_LINEAR_ACCESSIBLE) == GF_ERR_OK) {
+			this->lInfo.format, NULL, GF_SURFACE_CREATE_CPU_LINEAR_ACCESSIBLE|GF_SURFACE_PHYS_CONTIG) == GF_ERR_OK) {
 
 		gf_layer_set_surfaces(this->gfLayer, &surface, 1);
 
@@ -161,26 +175,27 @@ bool GLESScreen::initDevice()
 	this->lstep = info.stride;
 
 
-	/*if (gf_3d_target_create(&this->target, this->gfLayer, NULL, 0,
+/*
+	if (gf_3d_target_create(&this->target, this->gfLayer, NULL, 0,
 					this->w, this->h, this->lInfo.format) != GF_ERR_OK) {
 		qCritical("gf_3d_target_create() failed\n");
 	    return false;
 	}
 
-	// Õ‡ÚÒÓÈÍË ÒÎÓˇ.
+	// –ù–∞—Ç—Å—Ä–æ–π–∫–∏ —Å–ª–æ—è.
 	gf_layer_set_src_viewport(this->gfLayer, 0, 0, this->w-1, this->h-1);
 	gf_layer_set_dst_viewport(this->gfLayer, 0, 0, this->w-1, this->h-1);
 	gf_layer_set_filter(this->gfLayer, GF_LAYER_FILTER_NONE);
 	gf_layer_enable(this->gfLayer);
-
-	// —ÓÁ‰‡ÂÏ EGL window surface
+*/
+	// –°–æ–∑–¥–∞–µ–º EGL window surface
 	this->eglSurface = eglCreateWindowSurface(this->eglDisplay, this->eglConfig, this->target, NULL);
 	if (this->eglSurface == EGL_NO_SURFACE) {
 		qCritical("eglCreateWindowSurface() failed\n");
 		return false;
 	}
 
-	// —ÓÁ‰‡ÌËÂ ÍÓÌÚÂÍÒÚ‡ EGL
+	// –°–æ–∑–¥–∞–Ω–∏–µ –∫–æ–Ω—Ç–µ–∫—Å—Ç–∞ EGL
 	this->eglContext = eglCreateContext(this->eglDisplay, this->eglConfig, EGL_NO_CONTEXT, 0);
 	if (this->eglContext == EGL_NO_CONTEXT) {
 		 qCritical("eglCreateContext() failed");
@@ -191,17 +206,31 @@ bool GLESScreen::initDevice()
 			this->eglContext)) {
 		qCritical("eglMakeCurrent() failed");
 		return false;
-	}*/
+	}
 
-	// »ÌËˆË‡ÎËÁ‡ˆËˇ ÔÓ„‡ÏÏÌÓ„Ó ÍÛÒÓ‡
+	// –ü–æ–¥–∫–ª—é—á–µ–Ω–∏–µ –∫ —Å–ª–æ—Ç–∞–º —Å–æ–±—ã—Ç–∏–π
+	// –°–æ–±—ã—Ç–∏–µ –æ–∫–Ω–∞, –ø–æ–¥–∫–ª—é—á–∞–µ–º –∫ —Ñ—É–Ω–∫—Ü–∏–∏ windowEvent()
+    this->connect(QWSServer::instance(),
+                   SIGNAL(windowEvent(QWSWindow*, QWSServer::WindowEvent)),
+                   SLOT(windowEvent(QWSWindow*, QWSServer::WindowEvent)));
+    // –°–æ–±—ã—Ç–∏–µ —Ç–∞–π–º–µ—Ä–∞ –ø–æ–¥–∫–ª—é—á–∞–µ–º –∫ —Ñ—É–Ω–∫—Ü–∏–∏ redrawScreen()
+    this->connect(&updateTimer, SIGNAL(timeout()), this, SLOT(redrawScreenEvent()));
+
+	// –ò–Ω–∏—Ü–∏–∞–ª–∏–∑–∞—Ü–∏—è –ø—Ä–æ–≥—Ä–∞–º–º–Ω–æ–≥–æ –∫—É—Ä—Å–æ—Ä–∞
 	//QScreenCursor::initSoftwareCursor();
+    this->cursor = new GLESCursor();
+	qt_screencursor = this->cursor;
 
 	return true;
-
 }
 
+// –û—Å–≤–æ–±–æ–∂–¥–µ–Ω–∏–µ –≤—Å–µ—Ö –≤—ã–¥–µ–ª–µ–Ω–Ω—ã—Ö —Ä–µ—Å—É—Ä—Å–æ–≤
 void GLESScreen::shutdownDevice()
 {
+    delete this->cursor;
+    this->cursor = 0;
+    qt_screencursor = 0;
+
 	eglMakeCurrent(EGL_NO_DISPLAY, EGL_NO_SURFACE,
 	                    EGL_NO_SURFACE, EGL_NO_CONTEXT);
 	eglDestroyContext(this->eglDisplay, this->eglContext);
@@ -214,3 +243,101 @@ void GLESScreen::disconnect()
 	gf_display_detach(this->gfDisplay);
 	gf_dev_detach(this->gfDev);
 }
+
+
+// –ú–µ—Ç–æ–¥ –æ–±—Ä–∞–±–∞—Ç—ã–≤–∞—é—â–∏–µ —Å–æ–±—ã—Ç–∏–µ –æ–∫–Ω–∞.
+void GLESScreen::windowEvent(QWSWindow *window, QWSServer::WindowEvent event)
+{
+	switch (event)
+	{
+	case QWSServer::Create:		// –ï—Å–ª–∏ –±—ã–ª–æ —Å–æ–∑–¥–∞–Ω–æ –Ω–æ–≤–æ–µ –æ–∫–Ω–æ, —Ç–æ —Å–æ–∑–¥–∞–µ—Ç –æ–±—ä–µ–∫—Ç
+		windowMap[window] = new WindowInfo;		// WindowInfo –∏ –∑–∞–ø–∏—Å—ã–≤–∞–µ—Ç –µ–≥–æ –≤ –∫–∞—Ä—Ç—É
+		break;
+	case QWSServer::Destroy:	// –ï—Å–ª–∏ –±—ã–ª–æ —É–Ω–∏—á—Ç–æ–∂–µ–Ω–æ –æ–∫–Ω–æ, —Ç–æ —É–¥–∞–ª—è–µ—Ç –µ–≥–æ –∏–∑ –∫–∞—Ä—Ç—ã
+		delete windowMap[window];
+		windowMap.remove(window);
+		break;
+	default:
+		break;
+	}
+}
+
+// –ú–µ—Ç–æ–¥ –æ–±—Ä–∞–±–∞—Ç—ã–≤–∞—é—â–∏–µ —Å–æ–±—ã—Ç–∏–µ —Ç–∞–π–º–µ—Ä–∞ –ø–æ –ø–µ—Ä–µ—Ä–∏—Å–æ–≤–∫–µ —ç–∫—Ä–∞–Ω–∞
+void GLESScreen::redrawScreenEvent()
+{
+    updateTimer.stop();		// –û—Å—Ç–∞–Ω–∞–≤–ª–∏–≤–∞–µ—Ç —Ç–∞–π–º–µ—Ä
+    this->redrawScreen();	// –í—ã–∑—ã–≤–∞–µ—Ç –ø–µ—Ä–µ—Ä–∏—Å–æ–≤–∫—É —ç–∫—Ä–∞–Ω–∞
+}
+
+// –ú–µ—Ç–æ–¥ –æ—Ç—Ä–∏—Å–æ–≤–∫–∏ –∫–≤–∞–¥—Ä–∞—Ç–∞
+void GLESScreen::drawQuad(const QRect &textureGeometry,
+                             const QRect &subGeometry,
+                             const QRect &screenGeometry)
+ {
+     qreal textureWidth = qreal(nextPowerOfTwo(textureGeometry.width()));
+     qreal textureHeight = qreal(nextPowerOfTwo(textureGeometry.height()));
+
+     GLshort coords[8];
+     setRectCoords(coords, screenGeometry);
+
+     GLfloat texcoords[8];
+     texcoords[0] = (subGeometry.left() - textureGeometry.left()) / textureWidth;
+     texcoords[1] = (subGeometry.top() - textureGeometry.top()) / textureHeight;
+
+     texcoords[2] = (subGeometry.right() - textureGeometry.left()) / textureWidth;
+     texcoords[3] = (subGeometry.top() - textureGeometry.top()) / textureHeight;
+
+     texcoords[4] = (subGeometry.right() - textureGeometry.left()) / textureWidth;
+     texcoords[5] = (subGeometry.bottom() - textureGeometry.top()) / textureHeight;
+
+     texcoords[6] = (subGeometry.left() - textureGeometry.left()) / textureWidth;
+     texcoords[7] = (subGeometry.bottom() - textureGeometry.top()) / textureHeight;
+
+     drawQuad_helper(coords, texcoords);
+ }
+
+
+void GLESScreen::drawQuadWavyFlag(const QRect &textureGeometry,
+                                    const QRect &subTexGeometry,
+                                    const QRect &screenGeometry,
+                                    qreal progress)
+{
+    const int textureWidth = nextPowerOfTwo(textureGeometry.width());
+    const int textureHeight = nextPowerOfTwo(textureGeometry.height());
+
+    static int frameNum = 0;
+
+    GLshort coords[subdivisions*subdivisions*2*2];
+    setFlagCoords(coords, screenGeometry, frameNum++, progress);
+
+    GLfloat texcoords[subdivisions*subdivisions*2*2];
+    setFlagTexCoords(texcoords, subTexGeometry, textureGeometry,
+                     textureWidth, textureHeight);
+
+    drawQuad_helper(coords, texcoords, subdivisions*2, subdivisions);
+}
+
+
+// –ú–µ—Ç–æ–¥ —É–Ω–∏—á—Ç–æ–∂–∞–µ—Ç —Ç–µ–∫—Å—Ç—É—Ä—É –¥–ª—è —É–∫–∞–∑–∞–Ω–Ω–æ–≥–æ –æ–∫–Ω–∞
+void GLESScreen::invalidateTexture(int windowIndex)
+{
+    if (windowIndex < 0)
+        return;
+
+    QList<QWSWindow*> windows = QWSServer::instance()->clientWindows();
+    if (windowIndex > windows.size() - 1)
+        return;
+
+    QWSWindow *win = windows.at(windowIndex);
+    if (!win)
+        return;
+
+    WindowInfo *info = windowMap[win];
+    if (info->texture) {
+        glDeleteTextures(1, &info->texture);
+        info->texture = 0;
+    }
+}
+
+
+

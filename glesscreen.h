@@ -23,8 +23,26 @@ public:
 	void setMode(int, int, int){};
 	void blank(bool){};
 
+public slots:
+    void windowEvent(QWSWindow *w, QWSServer::WindowEvent e);
+    void redrawScreenEvent();
+
 private:
+    void redrawScreen();
 	void setAttrs(int red, int green, int blue, int alpha, int depth);
+	void drawWindow(QWSWindow *win, qreal progress);
+	void drawQuad(const QRect &textureGeometry,
+	                   const QRect &subGeometry,
+	                   const QRect &screenGeometry);
+    void drawQuadWavyFlag(const QRect &textureGeometry,
+                          const QRect &subTexGeometry,
+                          const QRect &screenGeometry,
+                          float progress);
+    void invalidateTexture(int windowIndex);
+
+	GLESCursor *cursor;
+
+	QTimer updateTimer;
 
 	int displayId;
 	gf_dev_t gfDev;
