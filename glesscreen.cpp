@@ -1,66 +1,8 @@
 #include "glesscreen.h"
-#include "helper.h"
-#include <QBrush>
-
-// Структура WindowInfo. Хранит информацию об окне - id текстуры этого окна
- struct WindowInfo
- {
-     WindowInfo() : texture(0) {}
-     GLuint texture;
- };
-
- // Карта ставящая в соответствие окну информацию о нем
- static QMap<QWSWindow*, WindowInfo*> windowMap;
-
-
-class GLESCreenPrivate : public QObject
-{
-	Q_OBJECT
-
-	public:
-		GLESCreenPrivate(GLESScreen *screen) {this->screen = screen;};
-
-	public slots:
-	     void windowEvent(QWSWindow *w, QWSServer::WindowEvent e);
-	     void redrawScreen();
-
-	private:
-	     GLESScreen *screen;
-};
-
-// Метод обрабатывающие событие таймера по перерисовке экрана
-void GLESCreenPrivate::redrawScreen()
-{
-    screen->updateTimer.stop();		// Останавливает таймер
-    screen->redrawScreen();	// Вызывает перерисовку экрана
-}
-
-// Метод обрабатывающие событие окна.
-void GLESCreenPrivate::windowEvent(QWSWindow *window, QWSServer::WindowEvent event)
-{
-	switch (event)
-	{
-	case QWSServer::Create:		// Если было создано новое окно, то создает объект
-		windowMap[window] = new WindowInfo;		// WindowInfo и записывает его в карту
-		break;
-	case QWSServer::Destroy:	// Если было уничтожено окно, то удаляет его из карты
-		delete windowMap[window];
-		windowMap.remove(window);
-		break;
-	default:
-		break;
-	}
-}
-
-
 
 GLESScreen::GLESScreen(int displayId)
 	:QScreen(displayId)
 {
-	this->d_ptr = new GLESCreenPrivate(this);
-
-	this->cursor = 0;
-
 	this->displayId = displayId;
 	this->eglAttrs[0] = EGL_RED_SIZE;	this->eglAttrs[1] = 0;
 	this->eglAttrs[2] = EGL_GREEN_SIZE;	this->eglAttrs[3] = 0;
@@ -147,9 +89,6 @@ bool GLESScreen::connect(const QString &displaySpec)
 		return false;
 	}
 
-	// Событие таймера подключаем к функции redrawScreen()
-	this->d_ptr->connect(&updateTimer, SIGNAL(timeout()), d_ptr, SLOT(redrawScreen()));
-
 	return true;
 }
 
@@ -219,7 +158,20 @@ bool GLESScreen::initDevice()
 	gf_surface_get_info(surface, &info);
 	this->data = info.vaddr;
 	this->lstep = info.stride;
+	this->size = this->h * this->lstep;
+	this->mapsize = this->h * this->lstep;
 
+	if (gf_context_create(&this->gfContext) != GF_ERR_OK)
+	{
+		qCritical("gf_context_create failed\n");
+		return false;
+	}
+
+	if (gf_context_set_surface(this->gfContext, surface) != GF_ERR_OK)
+	{
+		qCritical("gf_context_set_surface failed\n");
+		return false;
+	}
 
 /*
 	if (gf_3d_target_create(&this->target, this->gfLayer, NULL, 0,
@@ -254,16 +206,8 @@ bool GLESScreen::initDevice()
 		return false;
 	}
 
-	// Подключение к слотам событий
-	// Событие окна, подключаем к функции windowEvent()
-    d_ptr->connect(QWSServer::instance(),
-                   SIGNAL(windowEvent(QWSWindow*, QWSServer::WindowEvent)),
-                   SLOT(windowEvent(QWSWindow*, QWSServer::WindowEvent)));
-
 	// Инициализация программного курсора
-	//QScreenCursor::initSoftwareCursor();
-    this->cursor = new GLESCursor();
-	qt_screencursor = this->cursor;
+	QScreenCursor::initSoftwareCursor();
 
 	return true;
 }
@@ -271,9 +215,11 @@ bool GLESScreen::initDevice()
 // Освобождение всех выделенных ресурсов
 void GLESScreen::shutdownDevice()
 {
-    delete this->cursor;
-    this->cursor = 0;
-    qt_screencursor = 0;
+	if (this->gfContext)
+		gf_context_free(this->gfContext);
+
+	if (this->gfLayer)
+		gf_layer_detach(this->gfLayer);
 
 	eglMakeCurrent(EGL_NO_DISPLAY, EGL_NO_SURFACE,
 	                    EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -294,170 +240,17 @@ void GLESScreen::disconnect()
  */
 void GLESScreen::exposeRegion(QRegion r, int windowIndex)
 {
-    if ((r & region()).isEmpty())
-        return;
+	QScreen::exposeRegion(r, windowIndex);
+	if (gf_draw_begin(this->gfContext) != GF_ERR_OK)
+	{
+		qCritical("gf_draw_begin() failed");
+		return;
+	}
 
-    invalidateTexture(windowIndex);
+	if (gf_draw_flush(this->gfContext) != GF_ERR_OK)
+	{
+		qCritical("gf_draw_flush() failed");
+	}
 
-    if (!this->updateTimer.isActive())
-        this->updateTimer.start(frameSpan);
+	gf_draw_end(this->gfContext);
 }
-
-
-// Метод отрисовки квадрата
-void GLESScreen::drawQuad(const QRect &textureGeometry,
-                             const QRect &subGeometry,
-                             const QRect &screenGeometry)
- {
-     qreal textureWidth = qreal(nextPowerOfTwo(textureGeometry.width()));
-     qreal textureHeight = qreal(nextPowerOfTwo(textureGeometry.height()));
-
-     GLshort coords[8];
-     setRectCoords(coords, screenGeometry);
-
-     GLfloat texcoords[8];
-     texcoords[0] = (subGeometry.left() - textureGeometry.left()) / textureWidth;
-     texcoords[1] = (subGeometry.top() - textureGeometry.top()) / textureHeight;
-
-     texcoords[2] = (subGeometry.right() - textureGeometry.left()) / textureWidth;
-     texcoords[3] = (subGeometry.top() - textureGeometry.top()) / textureHeight;
-
-     texcoords[4] = (subGeometry.right() - textureGeometry.left()) / textureWidth;
-     texcoords[5] = (subGeometry.bottom() - textureGeometry.top()) / textureHeight;
-
-     texcoords[6] = (subGeometry.left() - textureGeometry.left()) / textureWidth;
-     texcoords[7] = (subGeometry.bottom() - textureGeometry.top()) / textureHeight;
-
-     drawQuad_helper(coords, texcoords);
- }
-
-
-void GLESScreen::drawQuadWavyFlag(const QRect &textureGeometry,
-                                    const QRect &subTexGeometry,
-                                    const QRect &screenGeometry,
-                                    qreal progress)
-{
-    const int textureWidth = nextPowerOfTwo(textureGeometry.width());
-    const int textureHeight = nextPowerOfTwo(textureGeometry.height());
-
-    static int frameNum = 0;
-
-    GLshort coords[subdivisions*subdivisions*2*2];
-    setFlagCoords(coords, screenGeometry, frameNum++, progress);
-
-    GLfloat texcoords[subdivisions*subdivisions*2*2];
-    setFlagTexCoords(texcoords, subTexGeometry, textureGeometry,
-                     textureWidth, textureHeight);
-
-    drawQuad_helper(coords, texcoords, subdivisions*2, subdivisions);
-}
-
-
-// Метод уничтожает текстуру для указанного окна
-void GLESScreen::invalidateTexture(int windowIndex)
-{
-    if (windowIndex < 0)
-        return;
-
-    QList<QWSWindow*> windows = QWSServer::instance()->clientWindows();
-    if (windowIndex > windows.size() - 1)
-        return;
-
-    QWSWindow *win = windows.at(windowIndex);
-    if (!win)
-        return;
-
-    WindowInfo *info = windowMap[win];
-    if (info->texture) {
-        glDeleteTextures(1, &info->texture);
-        info->texture = 0;
-    }
-}
-
-/*
- * Рисует окно указанное в аргументе win.
- */
-void GLESScreen::drawWindow(QWSWindow *win)
- {
-     const QRect screenRect = win->allocatedRegion().boundingRect();
-     QRect drawRect = screenRect;
-
-     glColor4f(1.0, 1.0, 1.0, 1.0);
-     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-     glEnable(GL_BLEND);
-
-     QWSWindowSurface *surface = win->windowSurface();
-     if (!surface)
-         return;
-
-     drawQuad(win->requestedRegion().boundingRect(), screenRect, drawRect);
- }
-
-/*
- * Обновляет изображение на экране. Компанует все окна вместе. Выводит изображение
- * на экран.
- */
- void GLESScreen::redrawScreen()
- {
-	 glBindFramebufferOES(GL_FRAMEBUFFER_OES, 0);
-     glMatrixMode(GL_PROJECTION);
-     glPushMatrix();
-     glMatrixMode(GL_MODELVIEW);
-     glPushMatrix();
-
-     glMatrixMode(GL_PROJECTION);
-     glLoadIdentity();
-     glOrthof(0, w, h, 0, -999999, 999999);
-     glViewport(0, 0, w, h);
-     glMatrixMode(GL_MODELVIEW);
-     glLoadIdentity();
-
-     // Заполняет задний фон
-     QColor bgColor = QWSServer::instance()->backgroundBrush().color();
-     glClearColor(bgColor.redF(), bgColor.greenF(),
-                  bgColor.blueF(), bgColor.alphaF());
-     glClear(GL_COLOR_BUFFER_BIT);
-
-     // Рисуте все окна
-     glDisable(GL_CULL_FACE);
-     glDisable(GL_DEPTH_TEST);
-     glDisable(GL_STENCIL_TEST);
-     glEnable(GL_BLEND);
-     glBlendFunc(GL_ONE, GL_ZERO);
-     glDisable(GL_ALPHA_TEST);
-     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-     QList<QWSWindow*> windows = QWSServer::instance()->clientWindows();
-     for (int i = windows.size() - 1; i >= 0; --i) {
-         QWSWindow *win = windows.at(i);
-         QWSWindowSurface *surface = win->windowSurface();
-         if (!surface)
-             continue;
-
-         WindowInfo *info = windowMap[win];
-
-         if (!info->texture) {
-             info->texture = createTexture(surface->image());
-         }
-         glBindTexture(GL_TEXTURE_2D, info->texture);
-         drawWindow(win);
-     }
-
-     // Рисует курсор поверх всех окон
-     const GLESCursor *cursor = this->cursor;
-     if (cursor->texture) {
-         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-         glBindTexture(GL_TEXTURE_2D, this->cursor->texture);
-         drawQuad(cursor->boundingRect(), cursor->boundingRect(),
-                  cursor->boundingRect());
-     }
-
-     glPopMatrix();
-     glMatrixMode(GL_PROJECTION);
-     glPopMatrix();
-     glMatrixMode(GL_MODELVIEW);
-
-     eglSwapBuffers(this->eglDisplay, this->eglSurface);
- }
-
-
