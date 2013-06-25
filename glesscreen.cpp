@@ -1,7 +1,6 @@
 #include "glesscreen.h"
-#include "glescursor.h"
 #include "helper.h"
-
+#include <QBrush>
 
 // Структура WindowInfo. Хранит информацию об окне - id текстуры этого окна
  struct WindowInfo
@@ -13,9 +12,53 @@
  // Карта ставящая в соответствие окну информацию о нем
  static QMap<QWSWindow*, WindowInfo*> windowMap;
 
+
+class GLESCreenPrivate : public QObject
+{
+	Q_OBJECT
+
+	public:
+		GLESCreenPrivate(GLESScreen *screen) {this->screen = screen;};
+
+	public slots:
+	     void windowEvent(QWSWindow *w, QWSServer::WindowEvent e);
+	     void redrawScreen();
+
+	private:
+	     GLESScreen *screen;
+};
+
+// Метод обрабатывающие событие таймера по перерисовке экрана
+void GLESCreenPrivate::redrawScreen()
+{
+    screen->updateTimer.stop();		// Останавливает таймер
+    screen->redrawScreen();	// Вызывает перерисовку экрана
+}
+
+// Метод обрабатывающие событие окна.
+void GLESCreenPrivate::windowEvent(QWSWindow *window, QWSServer::WindowEvent event)
+{
+	switch (event)
+	{
+	case QWSServer::Create:		// Если было создано новое окно, то создает объект
+		windowMap[window] = new WindowInfo;		// WindowInfo и записывает его в карту
+		break;
+	case QWSServer::Destroy:	// Если было уничтожено окно, то удаляет его из карты
+		delete windowMap[window];
+		windowMap.remove(window);
+		break;
+	default:
+		break;
+	}
+}
+
+
+
 GLESScreen::GLESScreen(int displayId)
 	:QScreen(displayId)
 {
+	this->d_ptr = new GLESCreenPrivate(this);
+
 	this->cursor = 0;
 
 	this->displayId = displayId;
@@ -105,7 +148,7 @@ bool GLESScreen::connect(const QString &displaySpec)
 	}
 
 	// Событие таймера подключаем к функции redrawScreen()
-	this->connect(&updateTimer, SIGNAL(timeout()), this, SLOT(redrawScreenEvent()));
+	this->d_ptr->connect(&updateTimer, SIGNAL(timeout()), d_ptr, SLOT(redrawScreen()));
 
 	return true;
 }
@@ -213,7 +256,7 @@ bool GLESScreen::initDevice()
 
 	// Подключение к слотам событий
 	// Событие окна, подключаем к функции windowEvent()
-    this->connect(QWSServer::instance(),
+    d_ptr->connect(QWSServer::instance(),
                    SIGNAL(windowEvent(QWSWindow*, QWSServer::WindowEvent)),
                    SLOT(windowEvent(QWSWindow*, QWSServer::WindowEvent)));
 
@@ -260,30 +303,6 @@ void GLESScreen::exposeRegion(QRegion r, int windowIndex)
         this->updateTimer.start(frameSpan);
 }
 
-
-// Метод обрабатывающие событие окна.
-void GLESScreen::windowEvent(QWSWindow *window, QWSServer::WindowEvent event)
-{
-	switch (event)
-	{
-	case QWSServer::Create:		// Если было создано новое окно, то создает объект
-		windowMap[window] = new WindowInfo;		// WindowInfo и записывает его в карту
-		break;
-	case QWSServer::Destroy:	// Если было уничтожено окно, то удаляет его из карты
-		delete windowMap[window];
-		windowMap.remove(window);
-		break;
-	default:
-		break;
-	}
-}
-
-// Метод обрабатывающие событие таймера по перерисовке экрана
-void GLESScreen::redrawScreenEvent()
-{
-    updateTimer.stop();		// Останавливает таймер
-    this->redrawScreen();	// Вызывает перерисовку экрана
-}
 
 // Метод отрисовки квадрата
 void GLESScreen::drawQuad(const QRect &textureGeometry,
@@ -378,9 +397,9 @@ void GLESScreen::drawWindow(QWSWindow *win)
  * Обновляет изображение на экране. Компанует все окна вместе. Выводит изображение
  * на экран.
  */
- void QAhiGLScreen::redrawScreen()
+ void GLESScreen::redrawScreen()
  {
-     glBindFramebufferOES(GL_FRAMEBUFFER_EXT, 0);
+	 glBindFramebufferOES(GL_FRAMEBUFFER_OES, 0);
      glMatrixMode(GL_PROJECTION);
      glPushMatrix();
      glMatrixMode(GL_MODELVIEW);
@@ -421,7 +440,7 @@ void GLESScreen::drawWindow(QWSWindow *win)
              info->texture = createTexture(surface->image());
          }
          glBindTexture(GL_TEXTURE_2D, info->texture);
-         drawWindow(win, progress);
+         drawWindow(win);
      }
 
      // Рисует курсор поверх всех окон

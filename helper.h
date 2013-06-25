@@ -8,6 +8,8 @@
 #include <QtGlobal>
 #include <QImage>
 
+#include <GLES/gl.h>
+
 // Создает текстуру из переданной картинки и возвращает id этой текстуры
 GLuint createTexture(const QImage &img);
 

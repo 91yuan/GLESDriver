@@ -1,7 +1,8 @@
 #include <GLES/gl.h>
 #include <cmath>
+#include "helper.h"
 
-static GLuint createTexture(const QImage &img)
+GLuint createTexture(const QImage &img)
 {
 	if (img.isNull())
 		return 0;
@@ -103,23 +104,23 @@ void setFlagCoords(GLshort *coords, QRectF screenGeometry, int frameNum, qreal p
             qreal c;
             c = screenGeometry.left()
                 + (i * screenGeometry.width() / (subdivisions - 1))
-                + waveHeight * qRound(sin(QFixed::fromReal(M_PI * 20 * (frameNum + i) / 180.0)))
-                + waveHeight * qRound(cos(QFixed::fromReal(M_PI * 20 * (frameNum + j) / 180.0)));
+                + waveHeight * qRound(sin((double)(M_PI * 20 * (double)(frameNum + i) / 180.0)))
+                + waveHeight * qRound(cos((double)(M_PI * 20 * (double)(frameNum + j) / 180.0)));
             coords[coordIndex++] = qRound(c);
             c = screenGeometry.top()
                 + (j * screenGeometry.height() / (subdivisions - 1))
-                + waveHeight * sin(QFixed::fromReal(M_PI * 20 * (frameNum + i) / 180.0))
-                + waveHeight * cos(QFixed::fromReal(M_PI * 20 * (frameNum + j) / 180.0));
+                + waveHeight * sin((double)(M_PI * 20 * (double)(frameNum + i) / 180.0))
+                + waveHeight * cos((double)(M_PI * 20 * (double)(frameNum + j) / 180.0));
             coords[coordIndex++] = qRound(c);
             c = screenGeometry.left() + (i * screenGeometry.width() / (subdivisions - 1))
-                + waveHeight * sin(QFixed::fromReal(M_PI * 20 * (frameNum + i) / 180.0))
-                + waveHeight * cos(QFixed::fromReal(M_PI * 20 * (frameNum + (j+1)) / 180.0));
+                + waveHeight * sin((double)(M_PI * 20 * (double)(frameNum + i) / 180.0))
+                + waveHeight * cos((double)(M_PI * 20 * (double)(frameNum + (j+1)) / 180.0));
             coords[coordIndex++] = qRound(c);
 
             c = screenGeometry.top()
                 + ((j + 1) * screenGeometry.height() / (subdivisions - 1))
-                + waveHeight * sin(QFixed::fromReal(M_PI * 20 * (frameNum + i) / 180.0))
-                + waveHeight * cos(QFixed::fromReal(M_PI * 20 * (frameNum + (j + 1)) / 180.0));
+                + waveHeight * sin((double)(M_PI * 20 * (double)(frameNum + i) / 180.0))
+                + waveHeight * cos((double)(M_PI * 20 * (double)(frameNum + (j + 1)) / 180.0));
             coords[coordIndex++] = qRound(c);
         }
     }

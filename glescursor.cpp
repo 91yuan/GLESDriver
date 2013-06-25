@@ -1,6 +1,7 @@
 /*
  * Реализация класса GLESCursor
  */
+#include "glescursor.h"
 #include "helper.h"
 
 // консруктор

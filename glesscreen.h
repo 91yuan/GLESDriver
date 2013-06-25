@@ -3,13 +3,24 @@
 
 #include <QScreen>
 #include <QtGlobal>
+#include <QWSServer>
+#include <QMap>
+#include <QTimer>
+
+#define GL_GLEXT_PROTOTYPES
 
 #include <gf/gf.h>
 #include <GLES/egl.h>
 #include <GLES/gl.h>
 #include <gf/gf3d.h>
+#include <GLES/glext.h>
+
+
+#include "glescursor.h"
 
 const int frameSpan = 20;
+
+class GLESCreenPrivate;
 
 class GLESScreen: public QScreen
 {
@@ -25,21 +36,19 @@ public:
 	void setMode(int, int, int){};
 	void blank(bool){};
 
-public slots:
-    void windowEvent(QWSWindow *w, QWSServer::WindowEvent e);
-    void redrawScreenEvent();
+	void exposeRegion(QRegion r, int changing);
 
 private:
     void redrawScreen();
 	void setAttrs(int red, int green, int blue, int alpha, int depth);
-	void drawWindow(QWSWindow *win, qreal progress);
+	void drawWindow(QWSWindow *win);
 	void drawQuad(const QRect &textureGeometry,
 	                   const QRect &subGeometry,
 	                   const QRect &screenGeometry);
     void drawQuadWavyFlag(const QRect &textureGeometry,
                           const QRect &subTexGeometry,
                           const QRect &screenGeometry,
-                          float progress);
+                          qreal progress);
     void invalidateTexture(int windowIndex);
 
 	GLESCursor *cursor;
@@ -58,6 +67,9 @@ private:
 	EGLContext eglContext;
 	EGLConfig eglConfig;
 	EGLint eglAttrs[13];
+
+	GLESCreenPrivate *d_ptr;
+	friend class GLESCreenPrivate;
 };
 
 #endif /* GLESSCREEN_H_ */

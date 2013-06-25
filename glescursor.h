@@ -7,10 +7,13 @@
 #include <QtGlobal>
 #include <GLES/gl.h>
 
+#include <QImage>
+#include <QScreenCursor>
+
  class GLESCursor : public QScreenCursor
  {
  public:
-     GLESCursor() : texture(0) {}
+     GLESCursor() : texture(0) {};
      ~GLESCursor();
 
      void set(const QImage &image, int hotx, int hoty);
