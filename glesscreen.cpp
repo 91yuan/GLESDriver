@@ -186,26 +186,28 @@ bool GLESScreen::initDevice()
 	gf_layer_set_filter(this->gfLayer, GF_LAYER_FILTER_NONE);
 	gf_layer_enable(this->gfLayer);
 */
+
+/*	qCritical("before eglCreateWindowSurface");
 	// Создаем EGL window surface
 	this->eglSurface = eglCreateWindowSurface(this->eglDisplay, this->eglConfig, this->target, NULL);
 	if (this->eglSurface == EGL_NO_SURFACE) {
 		qCritical("eglCreateWindowSurface() failed\n");
 		return false;
 	}
-
+	qCritical("before eglCreateContext");
 	// Создание контекста EGL
 	this->eglContext = eglCreateContext(this->eglDisplay, this->eglConfig, EGL_NO_CONTEXT, 0);
 	if (this->eglContext == EGL_NO_CONTEXT) {
 		 qCritical("eglCreateContext() failed");
 		 return false;
 	}
-
+	qCritical("before eglMakeCurrent");
 	if (!eglMakeCurrent(this->eglDisplay, this->eglSurface, this->eglSurface,
 			this->eglContext)) {
 		qCritical("eglMakeCurrent() failed");
 		return false;
-	}
-
+	}*/
+	qCritical("before initSoftwareCursor");
 	// Инициализация программного курсора
 	QScreenCursor::initSoftwareCursor();
 
@@ -240,17 +242,20 @@ void GLESScreen::disconnect()
  */
 void GLESScreen::exposeRegion(QRegion r, int windowIndex)
 {
+	qCritical("before exposeRegion");
 	QScreen::exposeRegion(r, windowIndex);
+	qCritical("after exposeRegion, before gf_draw_begin");
 	if (gf_draw_begin(this->gfContext) != GF_ERR_OK)
 	{
 		qCritical("gf_draw_begin() failed");
 		return;
 	}
-
+	qCritical("after gf_draw_begin, before gf_draw_flush");
 	if (gf_draw_flush(this->gfContext) != GF_ERR_OK)
 	{
 		qCritical("gf_draw_flush() failed");
 	}
-
+	qCritical("after gf_draw_flush, after gf_draw_end");
 	gf_draw_end(this->gfContext);
+	qCritical("after gf_draw_end");
 }
